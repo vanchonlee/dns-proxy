@@ -2,29 +2,29 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"os"
-	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/miekg/dns"
 )
 
+type AZConfig struct {
+	AZs map[string][]string `json:"azs"`
+}
+
 var (
-	ec2Client *ec2.Client
+	azConfig AZConfig
 )
 
 func main() {
-	// Initialize AWS EC2 client
-	cfg, err := config.LoadDefaultConfig(context.Background())
+	// Load AZ configuration
+	err := loadAZConfig("az_config.json")
 	if err != nil {
-		log.Fatalf("Failed to load AWS config: %v", err)
+		log.Fatalf("Failed to load AZ configuration: %v", err)
 	}
-	ec2Client = ec2.NewFromConfig(cfg)
 
 	// Create a new DNS server
 	server := &dns.Server{Addr: ":53", Net: "udp"}
@@ -35,6 +35,20 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
+}
+
+func loadAZConfig(filename string) error {
+	file, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("error reading config file: %v", err)
+	}
+
+	err = json.Unmarshal(file, &azConfig)
+	if err != nil {
+		return fmt.Errorf("error unmarshaling config: %v", err)
+	}
+
+	return nil
 }
 
 func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
@@ -51,9 +65,9 @@ func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	// Determine the AZ of the client (ingress controller)
-	clientAZ, err := getAZFromIP(clientIP)
-	if err != nil {
-		log.Printf("Error determining client AZ: %v", err)
+	clientAZ := getAZFromIP(clientIP)
+	if clientAZ == "" {
+		log.Printf("Unable to determine AZ for IP %s", clientIP)
 		w.WriteMsg(m)
 		return
 	}
@@ -97,48 +111,21 @@ func resolveAndFilterIPs(domain, targetAZ string) ([]string, error) {
 }
 
 func isInTargetAZ(ip, targetAZ string) bool {
-	input := &ec2.DescribeNetworkInterfacesInput{
-		Filters: []ec2.Filter{
-			{
-				Name:   aws.String("addresses.private-ip-address"),
-				Values: []string{ip},
-			},
-		},
-	}
-
-	result, err := ec2Client.DescribeNetworkInterfaces(context.Background(), input)
-	if err != nil {
-		log.Printf("Error describing network interfaces: %v", err)
-		return false
-	}
-
-	for _, ni := range result.NetworkInterfaces {
-		if ni.AvailabilityZone != nil && strings.EqualFold(*ni.AvailabilityZone, targetAZ) {
-			return true
-		}
-	}
-
-	return false
+	return getAZFromIP(ip) == targetAZ
 }
 
-func getAZFromIP(ip string) (string, error) {
-	input := &ec2.DescribeNetworkInterfacesInput{
-		Filters: []ec2.Filter{
-			{
-				Name:   aws.String("addresses.private-ip-address"),
-				Values: []string{ip},
-			},
-		},
+func getAZFromIP(ip string) string {
+	for az, ranges := range azConfig.AZs {
+		for _, cidr := range ranges {
+			_, ipNet, err := net.ParseCIDR(cidr)
+			if err != nil {
+				log.Printf("Error parsing CIDR %s: %v", cidr, err)
+				continue
+			}
+			if ipNet.Contains(net.ParseIP(ip)) {
+				return az
+			}
+		}
 	}
-
-	result, err := ec2Client.DescribeNetworkInterfaces(context.Background(), input)
-	if err != nil {
-		return "", fmt.Errorf("error describing network interfaces: %v", err)
-	}
-
-	if len(result.NetworkInterfaces) > 0 && result.NetworkInterfaces[0].AvailabilityZone != nil {
-		return *result.NetworkInterfaces[0].AvailabilityZone, nil
-	}
-
-	return "", fmt.Errorf("unable to determine AZ for IP %s", ip)
+	return ""
 }

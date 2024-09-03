@@ -1,19 +1,17 @@
 # AZ-Specific DNS Proxy
 
-This DNS proxy is designed to filter DNS responses based on a specific AWS Availability Zone (AZ). It's particularly useful for controlling traffic distribution in AWS environments, ensuring that an ingress only forwards requests to services within its own AZ.
+This DNS proxy is designed to filter DNS responses based on specific AWS Availability Zones (AZs). It's particularly useful for controlling traffic distribution in AWS environments, ensuring that an ingress only forwards requests to services within its own AZ.
 
 ## Features
 
 - Acts as a DNS proxy, listening on port 53 (UDP)
-- Filters IP addresses based on a specified AWS Availability Zone
-- Uses AWS SDK to query EC2 network interfaces for AZ information
-- Configurable via environment variables
+- Filters IP addresses based on AWS Availability Zones
+- Uses a configuration file to determine AZ IP ranges
+- No AWS SDK dependency, improving performance and reducing API calls
 
 ## Prerequisites
 
 - Go 1.15 or later
-- AWS account with appropriate permissions
-- AWS CLI configured with the necessary credentials
 
 ## Installation
 
@@ -33,25 +31,19 @@ This DNS proxy is designed to filter DNS responses based on a specific AWS Avail
    go build -o az-dns-proxy
    ```
 
-## Usage
-
-1. Set the target Availability Zone:
-   ```
-   export TARGET_AZ=us-west-2b
-   ```
-
-2. Run the DNS proxy:
-   ```
-   sudo ./az-dns-proxy
-   ```
-
-   Note: Running on port 53 requires root privileges.
-
 ## Configuration
 
-The application is configured using the following environment variables:
+Create a file named `az_config.json` in the same directory as the executable. This file should contain the IP ranges for each Availability Zone. Here's an example:
 
-- `TARGET_AZ`: The target AWS Availability Zone (e.g., "us-west-2b")
+```json
+{
+  "AZs": {
+    "us-west-2a": ["10.0.0.0/16"],
+    "us-west-2b": ["10.1.0.0/16"],
+    "us-west-2c": ["10.2.0.0/16"]
+  }
+}
+```
 
 ## AWS Permissions
 
