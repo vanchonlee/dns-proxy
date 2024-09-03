@@ -55,24 +55,36 @@ The application requires AWS permissions to describe EC2 network interfaces. Ens
 
 To use this DNS proxy with your ingress controllers:
 
-1. Deploy the DNS proxy in your cluster or on a dedicated instance with access to EC2 metadata.
+1. Deploy the DNS proxy in your cluster or on a dedicated instance.
 2. Configure each ingress controller to use the DNS proxy for name resolution.
-3. Ensure that the DNS proxy has the necessary AWS permissions.
+3. Ensure that the `az_config.json` file is properly configured with your AZ IP ranges.
 
 ## How It Works
 
-1. When an ingress controller sends a DNS query, the proxy determines the AZ of the ingress controller based on its IP address.
+1. When an ingress controller sends a DNS query, the proxy determines the AZ of the ingress controller based on its IP address using the `az_config.json` file.
 2. The proxy resolves the requested domain name to IP addresses.
 3. It then filters the IP addresses to only include those in the same AZ as the requesting ingress controller.
 4. The filtered IP addresses are returned in the DNS response.
 
 This ensures that each ingress controller only receives IP addresses for services in its own AZ.
 
+## Performance Considerations
+
+- The proxy uses a configuration file instead of querying AWS EC2 API, which significantly improves performance and eliminates API rate limit concerns.
+- IP range lookups are performed in memory, resulting in fast AZ determination.
+
 ## Limitations
 
 - The proxy currently only handles A records (IPv4 addresses).
-- It assumes it's running in an AWS environment with access to EC2 metadata.
-- Performance may be impacted by API rate limits when querying EC2 information.
+- It requires manual configuration of AZ IP ranges in the `az_config.json` file.
+- The configuration file needs to be updated if AZ IP ranges change.
+
+## Maintenance
+
+To keep the DNS proxy functioning correctly:
+
+1. Regularly review and update the `az_config.json` file to ensure it reflects your current AWS network configuration.
+2. If you add new AZs or change IP ranges in your AWS environment, update the configuration file accordingly.
 
 ## Contributing
 
